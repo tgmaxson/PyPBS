@@ -1,26 +1,11 @@
 #! /usr/bin/env python
 from util import cmdline
-import xml.etree.ElementTree as ET
+try:
+    import xml.etree.cElementTree as ET
+except ImportError:
+    import xml.etree.ElementTree as ET
 
-
-def qstat_processor(qresult):
-    qdict = {}
-    root = ET.XML(qresult)
-    for job in root:
-        id = job_root.find("Job_Id")
-        qdict[id] = {}
-        
-
-    for job_root in root:
-     id = job_root.find("Job_Id").text.split(".")[0]
-     name = job_root.find("Job_Name").text
-     variables = job_root.find("Variable_List").text.split(",")
-     for v in variables:
-        if pwd == v:
-            print "Killing {0} ({1})".format(name, id)
-            cmdline("qdel {0} &".format(id))
-
-def qstat(user=None, queue=None, extra=None, remote=None):
+def qstat(user=None, queue=None, extra=None, remote=None, process=False):
     command = ""
     if remote is not None:
         command += 'ssh -x {0} '.format(str(remote))
@@ -33,4 +18,52 @@ def qstat(user=None, queue=None, extra=None, remote=None):
         command += str(extra)
 
     qresult = cmdline(command)
+    if process:
+        qresult = qstat_process(qresult)
     return qresult
+
+def qstat_process(qresult):
+    qdict = {}
+    root = ET.XML("<WRAPPER>"+qresult+"</WRAPPER>")
+    for data in root:
+        for job in data:
+            def find(tag):
+                try:
+                    return job.find(tag).text
+                except:
+                    return None
+            id = find("Job_Id")
+            qdict[id] = {}
+            qdict[id]["Name"] = find("Job_Name")
+            qdict[id]["Owner"] = find("Job_Owner")
+            qdict[id]["State"] = find("job_state")
+            qdict[id]["Queue"] = find("queue")
+            qdict[id]["Server"] = find("server")
+            qdict[id]["Checkpoint"] = find("Checkpoint")
+            qdict[id]["Timing"] = {"Creation":find("ctime"),
+                                   "Eligible":find("etime"),
+                                   "Modified":find("mtime"),
+                                   "Queued": find("qtime")}
+            qdict[id]["Error"] = find("Error_Path")
+            qdict[id]["Holds"] = find("Hold_Types")
+            qdict[id]["MixIO"] = find("Join_Path")
+            qdict[id]["KeepIO"] = find("Keep_Files")
+            qdict[id]["MailTime"] = find("Mail_Points")
+            qdict[id]["Output"] = find("Output_Path")
+            qdict[id]["Priority"] = find("Priority")
+            qdict[id]["RebootRun"] = find("Rerunable")
+            qdict[id]["SubmitArgs"] = find("submit_args")
+            qdict[id]["FaultTolerant"] = find("fault_tolerant")
+            qdict[id]["Radix"] = find("job_radix")
+            qdict[id]["SubmitHost"] = find("submit_host")
+            qdict[id]["Resources"] = {}
+            for res in job.find("Resource_List"):
+                qdict[id]["Resources"][res.tag] = res.text
+            qdict[id]["Variables"] = {}
+            try:
+                for var in find("Variable_List").split(","):
+                    var_data = var.split("=")
+                    qdict[id]["Variables"][var_data[0]] = var_data[1]
+            except:
+                pass
+    return qdict
